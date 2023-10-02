@@ -1,7 +1,7 @@
 use std::arch::x86_64::_pext_u64;
-use std::fmt;
-use std::mem;
-use std::mem::transmute;
+use std::fmt; //python:del
+use std::mem; //python:del
+use std::mem::transmute; //python:del
 
 fn u16_to_data(d: u16) -> [i32; 4] {
     let mut data = [0; 4];
@@ -173,8 +173,8 @@ fn set_seed(mut seed: u64) {
     }
 }
 
-struct Board {
-    turn: usize,
+pub struct Board {
+    pub turn: usize,
     pub data: Data,
 }
 

@@ -1,7 +1,8 @@
-use std::arch::x86_64::_pext_u64;
 use std::fmt;
 use std::mem;
 use std::mem::transmute;
+use std::io;
+use std::arch::x86_64::_pext_u64;
 
 fn u16_to_data(d: u16) -> [i32; 4] {
     let mut data = [0; 4];
@@ -173,8 +174,8 @@ fn set_seed(mut seed: u64) {
     }
 }
 
-struct Board {
-    turn: usize,
+pub struct Board {
+    pub turn: usize,
     pub data: Data,
 }
 
@@ -297,7 +298,36 @@ pub fn temp() {
     }
 }
 
-use std::io;
+
+impl Board {
+    fn from_input() -> Self {
+        let mut buf = String::new();
+        std::io::stdin().read_line(&mut buf).unwrap();
+        let seed = buf.trim().parse::<u64>().unwrap();
+        std::io::stdin().read_line(&mut buf).unwrap();
+        let mut data = 0u64;
+        for i in 0..4 as usize {
+            buf.clear();
+            io::stdin().read_line(&mut buf).unwrap();
+            for (j, val) in buf.split_whitespace().enumerate() {
+                let cell = val.trim().parse::<u64>().unwrap();
+                let cell = match cell {
+                    0 => 0u64,
+                    2 => 1,
+                    4 => 2,
+                    _ => panic!("init errr"),
+                };
+                data = data | ((cell as u64) << (4 * (i * 4 + j)));
+            }
+        }
+        set_up(seed);
+        Board {
+            data: Data(data),
+            turn: 0,
+        }
+    }
+}
+
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -306,29 +336,11 @@ macro_rules! parse_input {
 }
 
 fn main() {
-    let mut input_line = String::new();
-    io::stdin().read_line(&mut input_line).unwrap();
-    let seed = parse_input!(input_line, u64);
-    io::stdin().read_line(&mut input_line).unwrap();
-    let score = parse_input!(input_line, i32);
-    let board = 0u64;
-    for i in 0..4 as usize {
-        let mut inputs = String::new();
-        io::stdin().read_line(&mut inputs).unwrap();
-        for (j,val) in inputs.split_whitespace().enumerate() {
-            let cell = parse_input!(val, i32);
-            let board = board | ((cell as u64) << (4 * (i * 4 + j)));
-        }
-    }
-    eprintln!("Seed: {}", seed);
-    let start = std::time::Instant::now();
-    set_up(seed);
-    eprintln!("set_up: {:?}", start.elapsed());
-    let mut board = Board { data: Data(board), turn: 0 };
+    let mut board = Board::from_input();
     let mut next = 1;
     let mut ans = String::new();
-    let mut c = "U";
     loop {
+        let mut c = "U";
         let moves = unsafe { board.moves() };
         if next == 1 {
             if board.data != moves.down {
