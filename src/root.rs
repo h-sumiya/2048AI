@@ -4,47 +4,26 @@
 //python:replace use std::io;
 //python:replace {engine.rs}
 //python:replace {input.rs}
-
-macro_rules! parse_input {
-    ($x:expr, $t:ident) => {
-        $x.trim().parse::<$t>().unwrap()
-    };
-}
+//python:replace {score.rs}
+//python:replace {timer.rs}
 
 fn main() {
+    let mut timer = TimeManager::new();
     let mut board = Board::from_input();
-    let mut next = 1;
-    let mut ans = String::new();
+    let mut ans = String::with_capacity(20000);
     loop {
-        let mut c = "U";
-        let moves = unsafe { board.moves() };
-        if next == 1 {
-            if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-                c = "D";
-            } else if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-                c = "R";
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
+        let m = board.auto_ai();
+        ans.push(m.0);
+        if let Some(b) = m.1 {
+            board = b;
+            if !timer.ok() {
+                println!("{}", ans);
+                ans.clear();
+                timer.next();
             }
         } else {
-            if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-                c = "R";
-            } else if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-                c = "D";
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
-            }
+            break;
         }
-        ans.push_str(c);
-        next = 1 - next;
     }
     println!("{}", ans);
 }

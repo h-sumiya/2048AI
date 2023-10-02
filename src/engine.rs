@@ -34,7 +34,9 @@ fn calc_line_l(data: &[i32; 4]) -> [i32; 4] {
     for num in data.iter() {
         if *num != 0 {
             if flag && res[index - 1] == *num {
-                res[index - 1] += 1;
+                if res[index - 1] != 15 {
+                    res[index - 1] += 1;
+                }
                 flag = false;
             } else {
                 res[index] = *num;
@@ -53,7 +55,9 @@ fn calc_line_r(data: &[i32; 4]) -> [i32; 4] {
     for num in data.iter().rev() {
         if *num != 0 {
             if flag && res[index + 1] == *num {
-                res[index + 1] += 1;
+                if res[index + 1] != 15 {
+                    res[index + 1] += 1;
+                }
                 flag = false;
             } else {
                 res[index] = *num;
@@ -140,9 +144,9 @@ impl fmt::Display for Data {
                 write!(f, "\n")?;
             }
             if *data != 0 {
-                write!(f, "{:4}", 2i32.pow(*data as u32))?;
+                write!(f, "{:8}", 2i32.pow(*data as u32))?;
             } else {
-                write!(f, "{:4}", data)?;
+                write!(f, "{:8}", data)?;
             }
         }
         Ok(())
@@ -178,6 +182,7 @@ pub struct Board {
     pub data: Data,
 }
 
+#[derive(Debug)]
 pub struct Moves {
     pub right: Data,
     pub left: Data,
@@ -260,39 +265,4 @@ impl Board {
 pub fn set_up(seed: u64) {
     calc_table();
     set_seed(seed);
-}
-
-pub fn temp() {
-    let start = std::time::Instant::now();
-    calc_table();
-    set_seed(290797);
-    println!("calc_table: {:?}", start.elapsed());
-    let start = std::time::Instant::now();
-    let mut board = Board::new();
-    let mut next = 1;
-    loop {
-        let moves = unsafe { board.moves() };
-        if next == 1 {
-            if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-            } else if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
-            }
-        } else {
-            if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-            } else if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
-            }
-        }
-        next = 1 - next;
-    }
 }

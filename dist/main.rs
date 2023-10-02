@@ -35,7 +35,9 @@ fn calc_line_l(data: &[i32; 4]) -> [i32; 4] {
     for num in data.iter() {
         if *num != 0 {
             if flag && res[index - 1] == *num {
-                res[index - 1] += 1;
+                if res[index - 1] != 15 {
+                    res[index - 1] += 1;
+                }
                 flag = false;
             } else {
                 res[index] = *num;
@@ -54,7 +56,9 @@ fn calc_line_r(data: &[i32; 4]) -> [i32; 4] {
     for num in data.iter().rev() {
         if *num != 0 {
             if flag && res[index + 1] == *num {
-                res[index + 1] += 1;
+                if res[index + 1] != 15 {
+                    res[index + 1] += 1;
+                }
                 flag = false;
             } else {
                 res[index] = *num;
@@ -141,9 +145,9 @@ impl fmt::Display for Data {
                 write!(f, "\n")?;
             }
             if *data != 0 {
-                write!(f, "{:4}", 2i32.pow(*data as u32))?;
+                write!(f, "{:8}", 2i32.pow(*data as u32))?;
             } else {
-                write!(f, "{:4}", data)?;
+                write!(f, "{:8}", data)?;
             }
         }
         Ok(())
@@ -179,6 +183,7 @@ pub struct Board {
     pub data: Data,
 }
 
+#[derive(Debug)]
 pub struct Moves {
     pub right: Data,
     pub left: Data,
@@ -263,42 +268,8 @@ pub fn set_up(seed: u64) {
     set_seed(seed);
 }
 
-pub fn temp() {
-    let start = std::time::Instant::now();
-    calc_table();
-    set_seed(290797);
-    println!("calc_table: {:?}", start.elapsed());
-    let start = std::time::Instant::now();
-    let mut board = Board::new();
-    let mut next = 1;
-    loop {
-        let moves = unsafe { board.moves() };
-        if next == 1 {
-            if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-            } else if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
-            }
-        } else {
-            if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-            } else if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
-            }
-        }
-        next = 1 - next;
-    }
-}
 
-
+#[allow(dead_code)]
 impl Board {
     fn from_input() -> Self {
         let mut buf = String::new();
@@ -329,46 +300,155 @@ impl Board {
 }
 
 
-macro_rules! parse_input {
-    ($x:expr, $t:ident) => {
-        $x.trim().parse::<$t>().unwrap()
-    };
-}
-
-fn main() {
-    let mut board = Board::from_input();
-    let mut next = 1;
-    let mut ans = String::new();
-    loop {
-        let mut c = "U";
-        let moves = unsafe { board.moves() };
-        if next == 1 {
-            if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-                c = "D";
-            } else if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-                c = "R";
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
+impl Board {
+    pub fn score(&self) -> usize {
+        let mut score = 0;
+        let mut before = 1000;
+        for i in [0, 1, 2, 3, 7, 6, 5, 4, 8, 9, 10, 11, 15, 14, 13, 12] {
+            let shift = i * 4;
+            let mask = 0xfu64 << (shift);
+            let num = (self.data.0 & mask) >> shift;
+            if num > before {
+                score += num.pow(3);
             }
-        } else {
-            if board.data != moves.right {
-                board = board.spawn(moves.right, moves.free_rl);
-                c = "R";
-            } else if board.data != moves.down {
-                board = board.spawn(moves.down, moves.free_ud);
-                c = "D";
-            } else if board.data != moves.up {
-                board = board.spawn(moves.up, moves.free_ud);
-            } else {
-                break;
+            before = num;
+        }
+        score as usize
+    }
+
+    pub fn auto_ai(&self) -> (char, Option<Self>) {
+        let mut free = 0;
+        for i in 0..16 {
+            let shift = i * 4;
+            let mask = 0xf << shift;
+            if self.data.0 & mask == 0 {
+                free += 1;
             }
         }
-        ans.push_str(c);
-        next = 1 - next;
+        let depth = (13 - free).max(5).min(9);
+        self.ai(depth)
+    }
+
+    pub fn ai(&self, depth: usize) -> (char, Option<Self>) {
+        let mut score = 100_000_001;
+        let moves = unsafe { self.moves() };
+        let mut res = None;
+        let mut c = 'U';
+        if self.data != moves.down {
+            let board = self.spawn(moves.down, moves.free_ud);
+            let s = board.node(depth - 1);
+            if s < score {
+                res = Some(board);
+                score = s;
+                c = 'D';
+            }
+        }
+        if self.data != moves.right {
+            let board = self.spawn(moves.right, moves.free_rl);
+            let s = board.node(depth - 1);
+            if s < score {
+                res = Some(board);
+                score = s;
+                c = 'R';
+            }
+        }
+        if self.data != moves.up {
+            let board = self.spawn(moves.up, moves.free_ud);
+            let s = board.node(depth - 1);
+            if s < score {
+                res = Some(board);
+                score = s;
+                c = 'U';
+            }
+        }
+        if self.data != moves.left {
+            let board = self.spawn(moves.left, moves.free_rl);
+            let s = board.node(depth - 1);
+            if s < score {
+                res = Some(board);
+                c = 'L';
+            }
+        }
+        (c, res)
+    }
+
+    fn node(&self, depth: usize) -> usize {
+        if depth == 0 {
+            return self.score();
+        }
+        let mut score = 100_000_000;
+        let moves = unsafe { self.moves() };
+        if self.data != moves.down {
+            let board = self.spawn(moves.down, moves.free_ud);
+            score = score.min(board.node(depth - 1));
+        }
+        if self.data != moves.right {
+            let board = self.spawn(moves.right, moves.free_rl);
+            score = score.min(board.node(depth - 1));
+        }
+        if self.data != moves.up {
+            let board = self.spawn(moves.up, moves.free_ud);
+            score = score.min(board.node(depth - 1));
+        }
+        if self.data != moves.left {
+            let board = self.spawn(moves.left, moves.free_rl);
+            score = score.min(board.node(depth - 1));
+        }
+        score
+    }
+}
+
+pub struct TimeManager {
+    start: std::time::Instant,
+    first: bool,
+}
+
+impl TimeManager {
+    pub fn new() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            first: true,
+        }
+    }
+
+    pub fn ok(&self) -> bool {
+        let ep = self.start.elapsed().as_millis();
+        if self.first {
+            return ep < 990;
+        } else {
+            return ep < 40;
+        }
+    }
+
+    pub fn next(&mut self) {
+        let mut buf = String::new();
+        for _ in 0..6 {
+            std::io::stdin().read_line(&mut buf).unwrap();
+            buf.clear();
+        }
+        self.start = std::time::Instant::now();
+        self.first = false;
+    }
+}
+
+
+fn main() {
+    let mut timer = TimeManager::new();
+    let mut board = Board::from_input();
+    let mut ans = String::with_capacity(20000);
+    loop {
+        let m = board.auto_ai();
+        ans.push(m.0);
+        if let Some(b) = m.1 {
+            board = b;
+            if !timer.ok() {
+                println!("{}", ans);
+                ans.clear();
+                timer.next();
+            }
+        } else {
+            break;
+        }
     }
     println!("{}", ans);
 }
