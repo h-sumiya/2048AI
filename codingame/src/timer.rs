@@ -1,8 +1,10 @@
+#![allow(dead_code)]
 pub struct TimeManager {
     start: std::time::Instant,
     first: bool,
 }
 
+#[allow(dead_code)]
 impl TimeManager {
     pub fn new() -> Self {
         Self {
