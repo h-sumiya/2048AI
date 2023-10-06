@@ -21,7 +21,8 @@ class Board:
             Board(moves[2]),
             Board(moves[3]),
         )
-
+    
+    @property
     def seed(self) -> int:
         return _seed(self._data)
 

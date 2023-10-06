@@ -4,7 +4,7 @@ board = Board.from_seed(290797)
 print(board)
 moves = board.moves()
 print(moves.down)
-print(moves.down.seed())
+print(moves.down.seed)
 
 data = bytes(board)
 board = Board(data)
