@@ -3,6 +3,8 @@ use std::arch::x86_64::*;
 use std::mem::transmute;
 use std::ops;
 
+use crate::configs::{MUTATION_RANGE, MUTATION_RATE};
+
 const ZERO: __m256 = unsafe { transmute([0f32; 8]) };
 
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +30,29 @@ impl T8 {
         res *= *max - *min;
         res += *min;
         res
+    }
+
+    pub fn mutate(&self, rng: &mut ThreadRng) -> Self {
+        let mut v: [f32; 8] = unsafe { transmute(self.0) };
+        for i in 0..8 {
+            if rng.gen::<f32>() < MUTATION_RATE {
+                v[i] += rng.gen::<f32>() * MUTATION_RANGE * 2.0 - MUTATION_RANGE;
+            }
+        }
+        T8::new(v)
+    }
+
+    pub fn cross(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
+        let mut v1: [f32; 8] = unsafe { transmute(self.0) };
+        let mut v2: [f32; 8] = unsafe { transmute(other.0) };
+        for i in 0..8 {
+            if rng.gen() {
+                let tmp = v1[i];
+                v1[i] = v2[i];
+                v2[i] = tmp;
+            }
+        }
+        (T8::new(v1), T8::new(v2))
     }
 
     #[target_feature(enable = "avx2")]
@@ -160,6 +185,39 @@ macro_rules! layer {
                 }
                 res
             }
+
+            pub fn mutate(&mut self, rng: &mut ThreadRng) {
+                for i in 0..$out_size {
+                    for j in 0..$in_size {
+                        self.weights[i][j] = self.weights[i][j].mutate(rng);
+                    }
+                    self.biases[i] = self.biases[i].mutate(rng);
+                }
+            }
+
+            pub fn cross(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
+                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut biases = [T8::new([0f32; 8]); $out_size];
+                let mut weights2 = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut biases2 = [T8::new([0f32; 8]); $out_size];
+                for i in 0..$out_size {
+                    for j in 0..$in_size {
+                        let (w1, w2) = self.weights[i][j].cross(&other.weights[i][j], rng);
+                        weights[i][j] = w1;
+                        weights2[i][j] = w2;
+                    }
+                    let (b1, b2) = self.biases[i].cross(&other.biases[i], rng);
+                    biases[i] = b1;
+                    biases2[i] = b2;
+                }
+                (
+                    $name { weights, biases },
+                    $name {
+                        weights: weights2,
+                        biases: biases2,
+                    },
+                )
+            }
         }
     };
 }
@@ -187,6 +245,23 @@ macro_rules! output_layer {
                 }
                 unsafe { res.sum() }
             }
+
+            pub fn mutate(&mut self, rng: &mut ThreadRng) {
+                for i in 0..$in_size {
+                    self.weights[i] = self.weights[i].mutate(rng);
+                }
+            }
+
+            pub fn cross(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
+                let mut weights = [T8::new([0f32; 8]); $in_size];
+                let mut weights2 = [T8::new([0f32; 8]); $in_size];
+                for i in 0..$in_size {
+                    let (w1, w2) = self.weights[i].cross(&other.weights[i], rng);
+                    weights[i] = w1;
+                    weights2[i] = w2;
+                }
+                ($name { weights }, $name { weights: weights2 })
+            }
         }
     };
 }
@@ -211,6 +286,26 @@ macro_rules! network {
                 $(let input = &self.$names.calc(input);)+
                 self.output_layer.calc(&input)
             }
+
+            pub fn mutate(&mut self, rng: &mut ThreadRng) {
+                $(self.$names.mutate(rng);)+
+                self.output_layer.mutate(rng);
+            }
+
+            pub fn cross(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
+                let output_layer = self.output_layer.cross(&other.output_layer, rng);
+                $(let $names = self.$names.cross(&other.$names, rng);)+
+                (
+                    $name {
+                        output_layer: output_layer.0,
+                        $($names: $names.0),+
+                    },
+                    $name {
+                        output_layer: output_layer.1,
+                        $($names: $names.1),+
+                    }
+                )
+            }
         }
     };
 }
@@ -218,7 +313,11 @@ macro_rules! network {
 layer!(Layer2_4, 2, 4);
 layer!(Layer4_4, 4, 4);
 output_layer!(OutputLayer4, 4);
-network!(Network={ OutputLayer4 , a:Layer2_4 , b:Layer4_4});
+network!(Network={
+    OutputLayer4 ,
+    a : Layer2_4 ,
+    b : Layer4_4
+});
 
 #[cfg(test)]
 mod tests {

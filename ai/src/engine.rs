@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use rand::prelude::*;
 use std::arch::x86_64::_pext_u64;
 use std::fmt;
 use std::mem::transmute;
@@ -170,6 +171,7 @@ pub fn set_seed(mut seed: u64) {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct Board {
     pub turn: usize,
     pub data: Data,
@@ -290,6 +292,12 @@ impl Board {
     }
 }
 
+pub fn random_seed() {
+    let mut rng = thread_rng();
+    let seed = rng.gen::<u64>() % 50515093;
+    set_seed(seed);
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -299,5 +307,12 @@ mod test {
         let board = Board::new();
         println!("{}", board.data);
         println!("{:?}", board.to_t8());
+    }
+
+    #[test]
+    fn test2() {
+        random_seed();
+        let board = Board::new();
+        println!("{}", board.data);
     }
 }

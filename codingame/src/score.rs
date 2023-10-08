@@ -26,7 +26,7 @@ impl Board {
             }
         }
         let depth = (11 - free).max(5).min(9);
-        self.ai(depth)
+        self.ai(4)
     }
 
     pub fn ai(&self, depth: usize) -> (char, Option<Self>) {
