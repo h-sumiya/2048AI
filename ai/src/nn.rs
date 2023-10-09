@@ -105,6 +105,10 @@ impl T8 {
     unsafe fn calc(&self, mul: &Self, add: &Self) -> Self {
         Self(_mm256_fmadd_ps(self.0, mul.0, add.0))
     }
+
+    pub fn dump(&self) -> [f32; 8] {
+        unsafe { transmute(self.0) }
+    }
 }
 
 impl ops::Add for T8 {
@@ -186,6 +190,44 @@ macro_rules! layer {
                 res
             }
 
+            pub fn size() -> usize {
+                $in_size * $out_size * 8 + $out_size * 8
+            }
+
+            pub fn dump(&self) -> Vec<f32> {
+                let mut res = Vec::with_capacity(Self::size());
+                for i in 0..$out_size {
+                    for j in 0..$in_size {
+                        res.extend_from_slice(&self.weights[i][j].dump());
+                    }
+                    res.extend_from_slice(&self.biases[i].dump());
+                }
+                res
+            }
+
+            pub fn load(data: &[f32]) -> Self {
+                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut biases = [T8::new([0f32; 8]); $out_size];
+                let mut index = 0;
+                for i in 0..$out_size {
+                    for j in 0..$in_size {
+                        let mut v = [0f32; 8];
+                        for k in 0..8 {
+                            v[k] = data[index];
+                            index += 1;
+                        }
+                        weights[i][j] = T8::new(v);
+                    }
+                    let mut v = [0f32; 8];
+                    for k in 0..8 {
+                        v[k] = data[index];
+                        index += 1;
+                    }
+                    biases[i] = T8::new(v);
+                }
+                $name { weights, biases }
+            }
+
             pub fn mutate(&mut self, rng: &mut ThreadRng) {
                 for i in 0..$out_size {
                     for j in 0..$in_size {
@@ -246,6 +288,32 @@ macro_rules! output_layer {
                 unsafe { res.sum() }
             }
 
+            pub fn size() -> usize {
+                $in_size * 8
+            }
+
+            pub fn dump(&self) -> Vec<f32> {
+                let mut res = Vec::with_capacity(Self::size());
+                for i in 0..$in_size {
+                    res.extend_from_slice(&self.weights[i].dump());
+                }
+                res
+            }
+
+            pub fn load(data: &[f32]) -> Self {
+                let mut weights = [T8::new([0f32; 8]); $in_size];
+                let mut index = 0;
+                for i in 0..$in_size {
+                    let mut v = [0f32; 8];
+                    for k in 0..8 {
+                        v[k] = data[index];
+                        index += 1;
+                    }
+                    weights[i] = T8::new(v);
+                }
+                $name { weights }
+            }
+
             pub fn mutate(&mut self, rng: &mut ThreadRng) {
                 for i in 0..$in_size {
                     self.weights[i] = self.weights[i].mutate(rng);
@@ -285,6 +353,31 @@ macro_rules! network {
             pub fn calc(&self, input: &[T8; 2]) -> f32 {
                 $(let input = &self.$names.calc(input);)+
                 self.output_layer.calc(&input)
+            }
+
+            pub fn size() -> usize {
+                <$out>::size() $(+ <$layer>::size())+
+            }
+
+            pub fn dump(&self) -> Vec<f32> {
+                let mut res = Vec::with_capacity(Self::size());
+                res.extend_from_slice(&self.output_layer.dump());
+                $(res.extend_from_slice(&self.$names.dump());)+
+                res
+            }
+
+            pub fn load(data: &[f32]) -> Self {
+                let mut index = 0;
+                let output_layer = <$out>::load(&data[index..]);
+                index += <$out>::size();
+                $(
+                    let $names = <$layer>::load(&data[index..]);
+                    index += <$layer>::size();
+                )+
+                $name {
+                    output_layer,
+                    $($names),+
+                }
             }
 
             pub fn mutate(&mut self, rng: &mut ThreadRng) {

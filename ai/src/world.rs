@@ -1,28 +1,46 @@
+use crate::configs::*;
+use crate::progress::Pbar;
+use crate::{engine::random_seed, game::Game, nn::Network};
+use once_cell::sync::Lazy;
+use rand::distributions::WeightedIndex;
+use rand::prelude::*;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 
-use crate::configs::*;
-use crate::{engine::random_seed, game::Game, nn::Network};
-use rand::distributions::WeightedIndex;
-use rand::prelude::*;
-
 pub struct World {
-    bots: Arc<Vec<Game>>,
+    pub bots: Arc<Vec<Game>>,
     pub generation: usize,
 }
 
+static PATH: Lazy<PathBuf> = Lazy::new(|| {
+    println!("Please input the path to save the data: ");
+    let mut buf = String::new();
+    std::io::stdin().read_line(&mut buf).unwrap();
+    let path = Path::new(buf.trim());
+    if !path.parent().unwrap().exists() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    }
+    path.to_path_buf()
+});
+
 impl World {
     pub fn new() -> Self {
-        let mut bots = Vec::with_capacity(NUM_BOTS);
-        let mut rng = thread_rng();
-        for _ in 0..NUM_BOTS {
-            let network = Network::new(&mut rng);
-            bots.push(Game::new(network));
-        }
-        World {
-            bots: Arc::new(bots),
-            generation: 0,
+        if PATH.exists() {
+            Self::load_from_file()
+        } else {
+            let mut bots = Vec::with_capacity(NUM_BOTS);
+            let mut rng = thread_rng();
+            for _ in 0..NUM_BOTS {
+                let network = Network::new(&mut rng);
+                bots.push(Game::new(network));
+            }
+            World {
+                bots: Arc::new(bots),
+                generation: 0,
+            }
         }
     }
 
@@ -30,9 +48,12 @@ impl World {
         random_seed();
         let index = Arc::new(Mutex::new(0));
         let mut handles = vec![];
+        println!("Running Generation {}...", self.generation);
+        let pbar = Pbar::new();
         for _ in 0..workers {
             let bots = self.bots.clone();
             let index = index.clone();
+            let pbar = pbar.clone();
             let handle = thread::spawn(move || loop {
                 let index = {
                     let mut index = index.lock().unwrap();
@@ -41,6 +62,7 @@ impl World {
                         break;
                     }
                     *index += 1;
+                    pbar.inc(1);
                     i
                 };
                 unsafe {
@@ -51,6 +73,8 @@ impl World {
             handles.push(handle);
         }
         handles.into_iter().for_each(|h| h.join().unwrap());
+        pbar.finish();
+        self.log();
     }
 
     pub fn max(&self) -> usize {
@@ -65,6 +89,56 @@ impl World {
         let mut bot = self.bots[index].clone();
         println!("{}", bot.run_with_ai(4).data);
         max
+    }
+
+    pub fn log(&self) {
+        println!("Generation{} max score: {}", self.generation, self.max());
+    }
+
+    pub fn dump(&self) -> Vec<u8> {
+        let mut res = Vec::with_capacity(NUM_BOTS * Network::size() + 4);
+        for bot in self.bots.iter() {
+            let data = bot.network.dump();
+            res.extend_from_slice(&data);
+        }
+        let mut res = unsafe {
+            let ptr = res.as_ptr() as *mut u8;
+            std::mem::forget(res);
+            let len = NUM_BOTS * Network::size() * 4;
+            Vec::from_raw_parts(ptr, len, len + 4)
+        };
+        let generation = self.generation as u32;
+        res.extend_from_slice(&generation.to_le_bytes());
+        res
+    }
+
+    pub fn load(data: &[u8]) -> Self {
+        unsafe {
+            let ptr = data.as_ptr() as *mut f32;
+            let len = data.len() / 4;
+            let slice = std::slice::from_raw_parts(ptr, len);
+            let mut bots = Vec::with_capacity(NUM_BOTS);
+            for i in 0..NUM_BOTS {
+                let network = Network::load(&slice[i * Network::size()..]);
+                bots.push(Game::new(network));
+            }
+            let mut buf = [0u8; 4];
+            buf.copy_from_slice(&data[NUM_BOTS * Network::size() * 4..]);
+            World {
+                bots: Arc::new(bots),
+                generation: u32::from_le_bytes(buf) as usize,
+            }
+        }
+    }
+
+    pub fn save(&self) {
+        let data = self.dump();
+        std::fs::write(&*PATH, data).unwrap();
+    }
+
+    pub fn load_from_file() -> Self {
+        let data = std::fs::read(&*PATH).unwrap();
+        World::load(&data)
     }
 
     pub fn index(&self) -> WeightedIndex<usize> {
@@ -108,6 +182,9 @@ impl World {
         }
         self.bots = Arc::new(bots);
         self.generation += 1;
+        if self.generation % SAVE_INTERVAL == 0 {
+            self.save();
+        }
     }
 }
 

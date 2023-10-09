@@ -5,3 +5,5 @@ pub const DO_CROSS: usize = 750;
 pub const DO_MUTATION: usize = 3000;
 pub const DO_CHANGE: usize = 500;
 pub const NUM_BOTS: usize = DO_CHANGE + DO_CROSS * 2 + DO_MUTATION;
+
+pub const SAVE_INTERVAL: usize = 1;
