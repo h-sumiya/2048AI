@@ -74,25 +74,15 @@ impl World {
         }
         handles.into_iter().for_each(|h| h.join().unwrap());
         pbar.finish();
+        let bots = Arc::get_mut(&mut self.bots).unwrap();
+        bots.sort_by_key(|b| -(b.score as isize));
         self.log();
     }
 
-    pub fn max(&self) -> usize {
-        let mut max = 0;
-        let mut index = 0;
-        for (i, bot) in self.bots.iter().enumerate() {
-            if bot.score > max {
-                max = bot.score;
-                index = i;
-            }
-        }
-        let mut bot = self.bots[index].clone();
-        println!("{}", bot.run_with_ai(4).data);
-        max
-    }
-
     pub fn log(&self) {
-        println!("Generation{} max score: {}", self.generation, self.max());
+        let mut bot = self.bots.get(0).unwrap().clone();
+        println!("{}", bot.run_with_ai(4).data);
+        println!("Generation{} max score: {}", self.generation, bot.score);
     }
 
     pub fn dump(&self) -> Vec<u8> {
@@ -143,15 +133,13 @@ impl World {
 
     pub fn index(&self) -> WeightedIndex<usize> {
         let mut weights = Vec::with_capacity(NUM_BOTS);
-        let mut min = 100_000;
-        for bot in self.bots.iter() {
-            let socre = bot.score;
-            weights.push(socre);
-            min = min.min(socre);
-        }
+        let mut min = self.bots.last().unwrap().score;
         min *= 9;
         min /= 10;
-        weights.iter_mut().for_each(|w| *w -= min);
+        for bot in self.bots.iter() {
+            let socre = bot.score;
+            weights.push(socre - min);
+        }
         WeightedIndex::new(&weights).unwrap()
     }
 

@@ -160,17 +160,19 @@ macro_rules! layer {
     ($name:ident, $in_size:expr, $out_size:expr) => {
         #[derive(Debug, Clone, Copy)]
         pub struct $name {
-            weights: [[T8; $in_size]; $out_size],
+            weights: [[T8; $in_size]; $out_size * 8],
             biases: [T8; $out_size],
         }
 
         impl $name {
             pub fn new(rng: &mut ThreadRng) -> Self {
-                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size * 8];
                 let mut biases = [T8::new([0f32; 8]); $out_size];
                 for i in 0..$out_size {
-                    for j in 0..$in_size {
-                        weights[i][j] = T8::random(rng, &MINUS_ONE, &ONE);
+                    for j in 0..8 {
+                        for k in 0..$in_size {
+                            weights[i * 8 + j][k] = T8::random(rng, &MINUS_ONE, &ONE);
+                        }
                     }
                     biases[i] = T8::random(rng, &MINUS_ONE, &ONE);
                 }
@@ -180,36 +182,42 @@ macro_rules! layer {
             pub fn calc(&self, input: &[T8; $in_size]) -> [T8; $out_size] {
                 let mut res = [T8::new([0f32; 8]); $out_size];
                 for i in 0..$out_size {
-                    let res = &mut res[i];
-                    for j in 0..$in_size {
-                        *res += input[j] * self.weights[i][j];
+                    let mut v = [0f32; 8];
+                    for j in 0..8 {
+                        let mut sum = T8(ZERO);
+                        let w = self.weights[i * 8 + j];
+                        for k in 0..$in_size {
+                            sum += input[k] * w[k];
+                        }
+                        v[j] = unsafe { sum.sum() };
                     }
-                    *res += self.biases[i];
-                    *res = unsafe { res.relu() };
+                    res[i] = unsafe { (T8::new(v) + self.biases[i]).relu() };
                 }
                 res
             }
 
-            pub fn size() -> usize {
-                $in_size * $out_size * 8 + $out_size * 8
+            pub const fn size() -> usize {
+                $in_size * $out_size * 8 * 8 + $out_size * 8
             }
 
             pub fn dump(&self) -> Vec<f32> {
                 let mut res = Vec::with_capacity(Self::size());
-                for i in 0..$out_size {
-                    for j in 0..$in_size {
-                        res.extend_from_slice(&self.weights[i][j].dump());
+                for ws in self.weights.iter() {
+                    for w in ws.iter() {
+                        res.extend_from_slice(&w.dump());
                     }
-                    res.extend_from_slice(&self.biases[i].dump());
+                }
+                for b in self.biases.iter() {
+                    res.extend_from_slice(&b.dump());
                 }
                 res
             }
 
             pub fn load(data: &[f32]) -> Self {
-                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size * 8];
                 let mut biases = [T8::new([0f32; 8]); $out_size];
                 let mut index = 0;
-                for i in 0..$out_size {
+                for i in 0..$out_size * 8 {
                     for j in 0..$in_size {
                         let mut v = [0f32; 8];
                         for k in 0..8 {
@@ -218,9 +226,11 @@ macro_rules! layer {
                         }
                         weights[i][j] = T8::new(v);
                     }
+                }
+                for i in 0..$out_size {
                     let mut v = [0f32; 8];
-                    for k in 0..8 {
-                        v[k] = data[index];
+                    for j in 0..8 {
+                        v[j] = data[index];
                         index += 1;
                     }
                     biases[i] = T8::new(v);
@@ -229,24 +239,29 @@ macro_rules! layer {
             }
 
             pub fn mutate(&mut self, rng: &mut ThreadRng) {
-                for i in 0..$out_size {
-                    for j in 0..$in_size {
-                        self.weights[i][j] = self.weights[i][j].mutate(rng);
+                for ws in self.weights.iter_mut() {
+                    for w in ws.iter_mut() {
+                        *w = w.mutate(rng);
                     }
-                    self.biases[i] = self.biases[i].mutate(rng);
+                }
+                for b in self.biases.iter_mut() {
+                    *b = b.mutate(rng);
                 }
             }
 
             pub fn cross(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
-                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut weights = [[T8::new([0f32; 8]); $in_size]; $out_size * 8];
                 let mut biases = [T8::new([0f32; 8]); $out_size];
-                let mut weights2 = [[T8::new([0f32; 8]); $in_size]; $out_size];
+                let mut weights2 = [[T8::new([0f32; 8]); $in_size]; $out_size * 8];
                 let mut biases2 = [T8::new([0f32; 8]); $out_size];
                 for i in 0..$out_size {
-                    for j in 0..$in_size {
-                        let (w1, w2) = self.weights[i][j].cross(&other.weights[i][j], rng);
-                        weights[i][j] = w1;
-                        weights2[i][j] = w2;
+                    for j in 0..8 {
+                        for k in 0..8 {
+                            let (w1, w2) =
+                                self.weights[i * 8 + j][k].cross(&other.weights[i * 8 + j][k], rng);
+                            weights[i * 8 + j][k] = w1;
+                            weights2[i * 8 + j][k] = w2;
+                        }
                     }
                     let (b1, b2) = self.biases[i].cross(&other.biases[i], rng);
                     biases[i] = b1;
@@ -288,7 +303,7 @@ macro_rules! output_layer {
                 unsafe { res.sum() }
             }
 
-            pub fn size() -> usize {
+            pub const fn size() -> usize {
                 $in_size * 8
             }
 
@@ -355,7 +370,7 @@ macro_rules! network {
                 self.output_layer.calc(&input)
             }
 
-            pub fn size() -> usize {
+            pub const fn size() -> usize {
                 <$out>::size() $(+ <$layer>::size())+
             }
 
@@ -424,5 +439,13 @@ mod tests {
         let output = network.calc(&input);
         println!("{:?}", output);
         println!("{:?}", network);
+    }
+
+    #[test]
+    fn size() {
+        println!("{}", Layer2_4::size());
+        println!("{}", Layer4_4::size());
+        println!("{}", OutputLayer4::size());
+        println!("{}", Network::size());
     }
 }

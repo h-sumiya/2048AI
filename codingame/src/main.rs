@@ -1,13 +1,21 @@
-use crate::engine::{set_up, Board};
+use crate::{
+    engine::{set_up, Board},
+    network::load_network,
+};
 
+#[macro_use]
+mod data;
+mod bin;
 mod engine;
 mod input;
+mod network;
 mod score;
 mod timer;
 
 fn main() {
     let start = std::time::Instant::now();
     set_up(290797);
+    load_network();
     let mut board = Board::new();
     let mut count = 0;
     loop {

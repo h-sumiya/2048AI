@@ -1,7 +1,9 @@
-use std::arch::x86_64::_pext_u64;
+use std::arch::x86_64::_pext_u64; //python:del
 use std::fmt; //python:del
 use std::mem; //python:del
 use std::mem::transmute; //python:del
+
+use crate::network::T8; //python:del
 
 fn u16_to_data(d: u16) -> [i32; 4] {
     let mut data = [0; 4];
@@ -50,17 +52,17 @@ fn calc_line_l(data: &[i32; 4]) -> [i32; 4] {
 
 fn calc_line_r(data: &[i32; 4]) -> [i32; 4] {
     let mut res = [0; 4];
-    let mut index = 3;
+    let mut index = 4;
     let mut flag = false;
     for num in data.iter().rev() {
         if *num != 0 {
-            if flag && res[index + 1] == *num {
-                if res[index + 1] != 15 {
-                    res[index + 1] += 1;
+            if flag && res[index] == *num {
+                if res[index] != 15 {
+                    res[index] += 1;
                 }
                 flag = false;
             } else {
-                res[index] = *num;
+                res[index - 1] = *num;
                 index -= 1;
                 flag = true;
             }
@@ -112,7 +114,7 @@ fn calc_line(data: &[i32; 4]) -> (RowData, ColData) {
 
 static mut ROW_TABLE: Vec<RowData> = unsafe { transmute([1u8; 24]) };
 static mut COL_TABLE: Vec<ColData> = unsafe { transmute([1u8; 24]) };
-
+static mut F_TABLE: Vec<[f32; 4]> = unsafe { transmute([1u8; 24]) };
 fn calc_table() {
     let mut row_data: Vec<RowData> = Vec::with_capacity(65536);
     let mut col_data: Vec<ColData> = Vec::with_capacity(65536);
@@ -127,6 +129,19 @@ fn calc_table() {
         mem::swap(&mut col_data, &mut COL_TABLE);
         mem::forget(row_data);
         mem::forget(col_data);
+    }
+    let mut f_table = Vec::with_capacity(65536);
+    for i in 0..=65535u16 {
+        let data = u16_to_data(i);
+        let mut f = [0f32; 4];
+        for j in 0..4 {
+            f[j] = data[j] as f32 / 15f32;
+        }
+        f_table.push(f);
+    }
+    unsafe {
+        mem::swap(&mut f_table, &mut F_TABLE);
+        mem::forget(f_table);
     }
 }
 
@@ -259,6 +274,28 @@ impl Board {
             }
         }
         panic!("{} {}", index, pos);
+    }
+
+    pub fn to_t8(&self) -> [T8; 2] {
+        unsafe {
+            let t1 = [
+                F_TABLE
+                    .get_unchecked(((self.data.0 >> 0) & 0xffff) as usize)
+                    .clone(),
+                F_TABLE
+                    .get_unchecked(((self.data.0 >> 16) & 0xffff) as usize)
+                    .clone(),
+            ];
+            let t2 = [
+                F_TABLE
+                    .get_unchecked(((self.data.0 >> 32) & 0xffff) as usize)
+                    .clone(),
+                F_TABLE
+                    .get_unchecked(((self.data.0 >> 48) & 0xffff) as usize)
+                    .clone(),
+            ];
+            [T8::new(transmute(t1)), T8::new(transmute(t2))]
+        }
     }
 }
 
