@@ -389,6 +389,7 @@ macro_rules! network {
                     let $names = <$layer>::load(&data[index..]);
                     index += <$layer>::size();
                 )+
+                assert_eq!(index, Self::size());
                 $name {
                     output_layer,
                     $($names),+

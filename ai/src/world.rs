@@ -15,10 +15,24 @@ pub struct World {
     pub generation: usize,
 }
 
+pub fn has_path() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        Some(args[1].clone())
+    } else {
+        None
+    }
+}
+
 static PATH: Lazy<PathBuf> = Lazy::new(|| {
-    println!("Please input the path to save the data: ");
-    let mut buf = String::new();
-    std::io::stdin().read_line(&mut buf).unwrap();
+    let buf = if let Some(path) = has_path() {
+        path
+    } else {
+        println!("Please input the path to save the data: ");
+        let mut buf = String::new();
+        std::io::stdin().read_line(&mut buf).unwrap();
+        buf
+    };
     let path = Path::new(buf.trim());
     if !path.parent().unwrap().exists() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

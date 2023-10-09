@@ -54,7 +54,7 @@ impl Board {
 
     fn node(&self, depth: usize) -> f32 {
         if depth == 0 {
-            return unsafe { NETWORK.calc(&self.to_t8()) };
+            return self.score();
         }
         let mut score = -100_000f32;
         let moves = unsafe { self.moves() };

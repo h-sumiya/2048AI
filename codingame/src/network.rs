@@ -209,6 +209,7 @@ macro_rules! network {
                     let $names = <$layer>::load(&data[index..]);
                     index += <$layer>::size();
                 )+
+                assert_eq!(index, Self::size());
                 $name {
                     output_layer,
                     $($names),+
@@ -228,4 +229,11 @@ network!(Network={
 });
 
 pub static mut NETWORK: Network = unsafe { transmute([0u8; Network::size() * 4]) };
-pub fn load_network() {}
+pub fn load_network() {
+    let data = [0f32]; //TODO: load from file
+    let mut net = Network::load(&data);
+    unsafe {
+        std::mem::swap(&mut NETWORK, &mut net);
+        std::mem::forget(net);
+    }
+}
